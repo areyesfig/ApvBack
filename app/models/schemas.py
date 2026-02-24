@@ -1,11 +1,16 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # --- Modelos existentes (retrocompatibilidad) ---
 
+# Límites razonables para mitigar DoS por inputs extremos (Chile)
+MAX_SUELDO_MENSUAL = 500_000_000
+MAX_APORTE_MENSUAL = 100_000_000
+
+
 class CalculoAPVRequest(BaseModel):
-    sueldo_bruto_mensual: float = Field(..., gt=0, description="Sueldo bruto mensual en pesos chilenos")
-    aporte_apv_mensual: float = Field(0, ge=0, description="Aporte APV mensual en pesos chilenos")
+    sueldo_bruto_mensual: float = Field(..., gt=0, le=MAX_SUELDO_MENSUAL, description="Sueldo bruto mensual en pesos chilenos")
+    aporte_apv_mensual: float = Field(0, ge=0, le=MAX_APORTE_MENSUAL, description="Aporte APV mensual en pesos chilenos")
 
 
 class CalculoAPVResponse(BaseModel):
@@ -20,7 +25,7 @@ class CalculoAPVResponse(BaseModel):
 
 
 class ProyeccionRequest(BaseModel):
-    aporte_mensual: float = Field(..., gt=0, description="Aporte mensual en pesos chilenos")
+    aporte_mensual: float = Field(..., gt=0, le=MAX_APORTE_MENSUAL, description="Aporte mensual en pesos chilenos")
     meses: int = Field(..., gt=0, le=600, description="Cantidad de meses a proyectar")
     tasa_rentabilidad_anual: float = Field(0.05, ge=0, le=1, description="Tasa de rentabilidad anual")
 
@@ -53,12 +58,18 @@ class ParametrosResponse(BaseModel):
 # --- Nuevos modelos Fase 1 ---
 
 class UserInput(BaseModel):
-    sueldo_bruto_mensual: float = Field(..., gt=0, description="Sueldo bruto mensual en pesos chilenos")
+    sueldo_bruto_mensual: float = Field(..., gt=0, le=MAX_SUELDO_MENSUAL, description="Sueldo bruto mensual en pesos chilenos")
     edad_actual: int = Field(..., ge=18, le=80, description="Edad actual del contribuyente")
     edad_jubilacion: int = Field(65, ge=50, le=80, description="Edad objetivo de jubilación")
-    ahorro_mensual_apv: float = Field(0, ge=0, description="Aporte APV mensual en pesos chilenos")
+    ahorro_mensual_apv: float = Field(0, ge=0, le=MAX_APORTE_MENSUAL, description="Aporte APV mensual en pesos chilenos")
     perfil_riesgo: float = Field(0.05, ge=0, le=0.30, description="Retorno anual esperado (ej: 0.05 = 5%)")
-    ahorro_mensual_normal: float = Field(0, ge=0, description="Ahorro mensual inversión normal (ETF) en pesos")
+    ahorro_mensual_normal: float = Field(0, ge=0, le=MAX_APORTE_MENSUAL, description="Ahorro mensual inversión normal (ETF) en pesos")
+
+    @model_validator(mode="after")
+    def edad_jubilacion_mayor_que_actual(self):
+        if self.edad_jubilacion <= self.edad_actual:
+            raise ValueError("edad_jubilacion debe ser mayor que edad_actual")
+        return self
 
 
 class TaxParameters(BaseModel):

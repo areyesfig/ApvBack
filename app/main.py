@@ -30,6 +30,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# En producción definir CORS_ORIGINS con orígenes concretos (ej. https://app.tudominio.com).
+# No usar "*" con allow_credentials=True en entornos sensibles.
 cors_origins = os.environ.get("CORS_ORIGINS", "*")
 allow_origins = [o.strip() for o in cors_origins.split(",")] if cors_origins != "*" else ["*"]
 
