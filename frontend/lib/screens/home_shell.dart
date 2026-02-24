@@ -7,6 +7,7 @@ import '../app.dart';
 import 'input_screen.dart';
 import 'chart_screen.dart';
 import 'fiscal_screen.dart';
+import 'historial_screen.dart';
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -154,6 +155,15 @@ class _HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
                   ],
                 ),
               ],
+            ),
+          ),
+          Semantics(
+            button: true,
+            label: 'Abrir historial de simulaciones',
+            child: IconButton(
+              icon: const Icon(Icons.history_rounded),
+              color: kTextMuted,
+              onPressed: () => HistorialScreen.open(context),
             ),
           ),
         ],

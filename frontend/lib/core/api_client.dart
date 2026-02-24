@@ -2,11 +2,15 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
-const _baseUrl = 'http://127.0.0.1:8000/api/v1';
+/// URL base del API. En producción usar: flutter run/build --dart-define=API_BASE=https://api.tudominio.com/api/v1
+const _defaultBaseUrl = 'http://127.0.0.1:8000/api/v1';
 
-/// Cliente para el backend APV. Cambiar _baseUrl en producción.
+String _envBaseUrl() =>
+    const String.fromEnvironment('API_BASE', defaultValue: _defaultBaseUrl);
+
+/// Cliente para el backend APV.
 class ApiClient {
-  ApiClient({String? baseUrl}) : _base = baseUrl ?? _baseUrl;
+  ApiClient({String? baseUrl}) : _base = baseUrl ?? _envBaseUrl();
 
   final String _base;
 
@@ -22,6 +26,20 @@ class ApiClient {
       Uri.parse('$_base/simulate/apv'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode(body),
+    );
+    _throwIfNotOk(r);
+    return jsonDecode(r.body) as Map<String, dynamic>;
+  }
+
+  /// POST /comparar con dos UserInput.
+  Future<Map<String, dynamic>> compararEscenarios(
+    Map<String, dynamic> escenarioA,
+    Map<String, dynamic> escenarioB,
+  ) async {
+    final r = await http.post(
+      Uri.parse('$_base/comparar'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'escenario_a': escenarioA, 'escenario_b': escenarioB}),
     );
     _throwIfNotOk(r);
     return jsonDecode(r.body) as Map<String, dynamic>;

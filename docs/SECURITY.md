@@ -136,9 +136,9 @@ const _baseUrl = 'http://127.0.0.1:8000/api/v1';
 
 ## Checklist de mitigación
 
-- [ ] Configurar `CORS_ORIGINS` en producción con orígenes concretos (no `*`).
-- [ ] Añadir rate limiting a la API.
-- [ ] Definir URL del API en el frontend por entorno (HTTPS en producción).
+- [x] Configurar `CORS_ORIGINS` en producción con orígenes concretos (no `*`). Si `ENV=production` y no se define, no se acepta ningún origen.
+- [x] Añadir rate limiting a la API (slowapi: 20/min en simulate, 30/min en parametros, 40/min en el resto; health/ready exentos).
+- [x] Definir URL del API en el frontend por entorno (HTTPS en producción). Usar `--dart-define=API_BASE=https://api.tudominio.com/api/v1` en build/run.
 - [ ] Añadir topes a `sueldo_bruto_mensual`, `ahorro_mensual_apv` y `ahorro_mensual_normal` en Pydantic.
 - [ ] Validar `edad_jubilacion > edad_actual` en `UserInput`.
 - [ ] Ejecutar `pip audit` / `safety` de forma periódica y fijar dependencias en producción.

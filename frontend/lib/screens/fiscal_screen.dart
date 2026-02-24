@@ -2,11 +2,26 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../app.dart';
+import '../core/models.dart';
+import '../state/history_provider.dart';
+import '../state/parametros_provider.dart';
 import '../state/simulation_provider.dart';
+import 'pdf_export.dart';
 
 final _nf = NumberFormat('#,###', 'es_CL');
+
+void _share(TotalesSimulacion totales, UserInput input) {
+  final rb = totales.regimenB;
+  final text = 'Simulación APV Chile\n'
+      'Mejor régimen: ${totales.mejorRegimen}\n'
+      'Ahorro fiscal anual: \$${_nf.format(rb.ahorroFiscal.round())}\n'
+      'Sueldo bruto: \$${_nf.format(input.sueldoBrutoMensual.round())}/mes · Aporte APV: \$${_nf.format(input.ahorroMensualApv.round())}/mes\n'
+      'Generado con APV Simulator';
+  Share.share(text);
+}
 
 class FiscalScreen extends ConsumerWidget {
   const FiscalScreen({super.key});
@@ -18,6 +33,8 @@ class FiscalScreen extends ConsumerWidget {
     final result = state?.result;
     final totales = result?.totales;
     final input = state?.input;
+    final parametrosAsync = ref.watch(parametrosProvider);
+    final isOffline = state?.isFromOfflineCache ?? false;
 
     if (totales == null || input == null) {
       return Center(
@@ -28,24 +45,37 @@ class FiscalScreen extends ConsumerWidget {
     final rb = totales.regimenB;
     final ra = totales.regimenA;
     final aporteAnual = input.ahorroMensualApv * 12;
+    final lastItem = result?.proyeccionAnual.isNotEmpty == true ? result!.proyeccionAnual.last : null;
+    final capitalNetoApv = lastItem != null ? (lastItem.capitalApv + lastItem.capitalAhorroTradicional) : totales.ahorroTradicional?.capitalNeto;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
       physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
       children: [
+        if (isOffline) _OfflineBanner(),
+        if (parametrosAsync.valueOrNull != null) _IndicadoresRow(parametros: parametrosAsync.value!),
         // Header
-        Text(
-          'Resumen fiscal',
-          style: GoogleFonts.spaceGrotesk(
-            fontSize: 24,
-            fontWeight: FontWeight.w700,
-            color: kTextPrimary,
-            letterSpacing: -0.8,
+        Semantics(
+          header: true,
+          child: Text(
+            'Resumen fiscal',
+            style: GoogleFonts.spaceGrotesk(
+              fontSize: 24,
+              fontWeight: FontWeight.w700,
+              color: kTextPrimary,
+              letterSpacing: -0.8,
+            ),
           ),
         ),
         Text(
           'Beneficios tributarios anuales',
           style: GoogleFonts.inter(fontSize: 14, color: kTextMuted),
+        ),
+        const SizedBox(height: 12),
+        _ActionButtons(
+          onSave: () => ref.read(historyProvider.notifier).addFromState(input, totales, capitalNetoApv: capitalNetoApv),
+          onShare: () => _share(totales, input),
+          onPdf: () => PdfExport.exportAndShare(context, input, totales, result!),
         ),
         const SizedBox(height: 20),
 
@@ -64,8 +94,123 @@ class FiscalScreen extends ConsumerWidget {
         _LimitesCard(rb: rb, ra: ra),
         const SizedBox(height: 16),
 
+        // Régimen elegido (si no es auto)
+        if (totales.regimenElegido != 'auto' && totales.beneficioRegimenElegido != null)
+          _RegimenElegidoCard(
+            regimenElegido: totales.regimenElegido,
+            beneficio: totales.beneficioRegimenElegido!,
+            mejorRegimen: totales.mejorRegimen,
+          ),
+        if (totales.regimenElegido != 'auto' && totales.beneficioRegimenElegido != null)
+          const SizedBox(height: 16),
         // Mejor opcion
         _BestOptionCard(totales: totales),
+      ],
+    );
+  }
+}
+
+// ── Offline banner ──────────────────────────────────────────────────
+
+class _OfflineBanner extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: kAccent3.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: kAccent3.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.cloud_off_rounded, size: 18, color: kAccent3),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Datos de la última vez que tuviste conexión',
+              style: GoogleFonts.inter(fontSize: 12, color: kAccent3),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Indicadores (UF actualizado) ────────────────────────────────────
+
+class _IndicadoresRow extends StatelessWidget {
+  const _IndicadoresRow({required this.parametros});
+  final ParametrosModel parametros;
+
+  @override
+  Widget build(BuildContext context) {
+    String subtitle = 'UF = \$${_nf.format(parametros.uf.round())}';
+    if (parametros.indicadoresActualizadoEn != null) {
+      try {
+        final d = DateTime.parse(parametros.indicadoresActualizadoEn!);
+        subtitle += ' (actualizado al ${DateFormat('dd/MM/yyyy').format(d)})';
+      } catch (_) {}
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Text(
+        subtitle,
+        style: GoogleFonts.inter(fontSize: 12, color: kTextMuted),
+      ),
+    );
+  }
+}
+
+// ── Action buttons (Guardar, Compartir, PDF) ─────────────────────────
+
+class _ActionButtons extends StatelessWidget {
+  const _ActionButtons({required this.onSave, required this.onShare, required this.onPdf});
+  final VoidCallback onSave;
+  final VoidCallback onShare;
+  final VoidCallback onPdf;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: onSave,
+            icon: const Icon(Icons.save_rounded, size: 18),
+            label: const Text('Guardar'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: kAccent,
+              side: BorderSide(color: kAccent.withValues(alpha: 0.5)),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: onShare,
+            icon: const Icon(Icons.share_rounded, size: 18),
+            label: const Text('Compartir'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: kAccent2,
+              side: BorderSide(color: kAccent2.withValues(alpha: 0.5)),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: onPdf,
+            icon: const Icon(Icons.picture_as_pdf_rounded, size: 18),
+            label: const Text('PDF'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: kTextPrimary,
+              side: const BorderSide(color: kBorderGlass),
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -516,6 +661,65 @@ class _GlowProgressBarState extends State<_GlowProgressBar>
           style: GoogleFonts.inter(fontSize: 11, color: kTextMuted),
         ),
       ],
+    );
+  }
+}
+
+// ── Régimen elegido (cuando el usuario eligió A o B) ─────────────────
+
+class _RegimenElegidoCard extends StatelessWidget {
+  const _RegimenElegidoCard({
+    required this.regimenElegido,
+    required this.beneficio,
+    required this.mejorRegimen,
+  });
+  final String regimenElegido;
+  final double beneficio;
+  final String mejorRegimen;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = regimenElegido == 'A' ? 'Régimen A' : 'Régimen B';
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: kAccent.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: kAccent.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.check_circle_rounded, size: 20, color: kAccent),
+              const SizedBox(width: 10),
+              Text(
+                'Tu régimen: $label',
+                style: GoogleFonts.spaceGrotesk(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: kTextPrimary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Beneficio anual: \$${_nf.format(beneficio.round())}',
+            style: GoogleFonts.spaceGrotesk(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: kAccent,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'El óptimo para tu caso sería $mejorRegimen.',
+            style: GoogleFonts.inter(fontSize: 12, color: kTextMuted),
+          ),
+        ],
+      ),
     );
   }
 }

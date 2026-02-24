@@ -330,3 +330,99 @@ class TestAPI:
         assert primer_anio["edad"] == 31
         assert "capital_apv" in primer_anio
         assert "capital_ahorro_tradicional" in primer_anio
+
+
+class TestHealth:
+    def test_health(self):
+        """GET /health devuelve 200 y status ok (liveness)."""
+        response = client.get("/health")
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok"}
+
+    def test_ready(self):
+        """GET /ready devuelve 200 con indicadores y estado de caché (readiness)."""
+        response = client.get("/ready")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "ok"
+        assert "indicadores" in data
+        assert "uf" in data["indicadores"]
+        assert "utm" in data["indicadores"]
+        assert "cache_indicadores" in data
+
+
+class TestRecomendacion:
+    def test_recomendacion_basica(self):
+        """POST /api/v1/recomendacion devuelve mejor régimen y mensaje."""
+        response = client.post("/api/v1/recomendacion", json={
+            "sueldo_bruto_mensual": 2_500_000,
+            "edad_actual": 35,
+            "edad_jubilacion": 65,
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert "mejor_regimen" in data
+        assert data["mejor_regimen"] in ("Régimen A", "Régimen B", "Mix")
+        assert "tope_apv_pesos" in data
+        assert "aporte_sugerido_mensual" in data
+        assert "beneficio_anual_estimado" in data
+        assert "mensaje" in data
+
+    def test_recomendacion_con_aporte(self):
+        """Recomendación con aporte APV indicado."""
+        response = client.post("/api/v1/recomendacion", json={
+            "sueldo_bruto_mensual": 3_000_000,
+            "edad_actual": 30,
+            "edad_jubilacion": 65,
+            "ahorro_mensual_apv": 200_000,
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert data["beneficio_anual_estimado"] >= 0
+
+
+class TestComparar:
+    def test_comparar_escenarios(self):
+        """POST /api/v1/comparar devuelve diferencias entre dos escenarios."""
+        response = client.post("/api/v1/comparar", json={
+            "escenario_a": {
+                "sueldo_bruto_mensual": 2_000_000,
+                "edad_actual": 30,
+                "edad_jubilacion": 65,
+                "ahorro_mensual_apv": 100_000,
+                "perfil_riesgo": 0.05,
+                "ahorro_mensual_normal": 0,
+            },
+            "escenario_b": {
+                "sueldo_bruto_mensual": 2_000_000,
+                "edad_actual": 30,
+                "edad_jubilacion": 65,
+                "ahorro_mensual_apv": 200_000,
+                "perfil_riesgo": 0.05,
+                "ahorro_mensual_normal": 0,
+            },
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert "escenario_a" in data
+        assert "escenario_b" in data
+        assert "diferencia_ahorro_fiscal" in data
+        assert "mensaje" in data
+        assert data["diferencia_ahorro_fiscal"] > 0  # Más aporte → más beneficio
+
+
+class TestExportExcel:
+    def test_export_excel(self):
+        """POST /api/v1/export/excel devuelve un archivo xlsx."""
+        response = client.post("/api/v1/export/excel", json={
+            "sueldo_bruto_mensual": 2_500_000,
+            "edad_actual": 32,
+            "edad_jubilacion": 65,
+            "ahorro_mensual_apv": 150_000,
+            "perfil_riesgo": 0.05,
+            "ahorro_mensual_normal": 0,
+        })
+        assert response.status_code == 200
+        assert "spreadsheetml" in response.headers.get("content-type", "")
+        assert "attachment" in response.headers.get("content-disposition", "")
+        assert len(response.content) > 1000

@@ -2,6 +2,7 @@
 
 import logging
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -15,6 +16,7 @@ TTL_SECONDS = 24 * 60 * 60  # 24 horas
 
 _cache: dict[str, Any] = {}
 _cache_updated_at: float = 0.0
+_cache_updated_at_iso: str | None = None  # Fecha/hora UTC ISO para respuestas API
 
 
 def _parse_valor(data: dict) -> int | None:
@@ -51,23 +53,29 @@ def _is_cache_valid() -> bool:
     return bool(_cache) and (time.monotonic() - _cache_updated_at) < TTL_SECONDS
 
 
-def refresh_indicadores() -> dict[str, int]:
+def is_indicadores_cache_valid() -> bool:
+    """Indica si la caché de UF/UTM/UTA está cargada y dentro del TTL (para readiness)."""
+    return _is_cache_valid()
+
+
+def refresh_indicadores() -> dict[str, Any]:
     """Consulta mindicador.cl y actualiza la caché en memoria. UTA = UTM * 12."""
-    global _cache, _cache_updated_at
+    global _cache, _cache_updated_at, _cache_updated_at_iso
     with httpx.Client() as client:
         uf = _fetch_indicador(client, "uf")
         utm = _fetch_indicador(client, "utm")
     uf = uf if uf is not None else UF_DEFAULT
     utm = utm if utm is not None else UTM_DEFAULT
     uta = utm * 12
-    _cache = {"uf": uf, "utm": utm, "uta": uta}
+    _cache_updated_at_iso = datetime.now(timezone.utc).isoformat()
+    _cache = {"uf": uf, "utm": utm, "uta": uta, "indicadores_actualizado_en": _cache_updated_at_iso}
     _cache_updated_at = time.monotonic()
     logger.info("Indicadores actualizados: UF=%s, UTM=%s, UTA=%s", uf, utm, uta)
     return _cache
 
 
-def get_indicadores() -> dict[str, int]:
-    """Devuelve UF, UTM y UTA: desde caché si es válida, si no consulta mindicador y actualiza caché."""
+def get_indicadores() -> dict[str, Any]:
+    """Devuelve UF, UTM, UTA y opcionalmente indicadores_actualizado_en (ISO UTC)."""
     if _is_cache_valid():
         return _cache.copy()
     try:
@@ -78,4 +86,5 @@ def get_indicadores() -> dict[str, int]:
             "uf": UF_DEFAULT,
             "utm": UTM_DEFAULT,
             "uta": UTA_DEFAULT,
+            "indicadores_actualizado_en": None,
         }

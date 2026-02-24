@@ -5,7 +5,9 @@ import 'package:intl/intl.dart';
 
 import '../app.dart';
 import '../core/models.dart';
+import '../state/parametros_provider.dart';
 import '../state/simulation_provider.dart';
+import 'comparar_bottom_sheet.dart';
 
 final _nf = NumberFormat('#,###', 'es_CL');
 
@@ -16,6 +18,7 @@ class InputScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final asyncState = ref.watch(simulationProvider);
     final state = asyncState.value;
+    final parametros = ref.watch(parametrosProvider).valueOrNull;
     final input = state?.input ??
         UserInput(
           sueldoBrutoMensual: 2500000,
@@ -25,6 +28,11 @@ class InputScreen extends ConsumerWidget {
           perfilRiesgo: PerfilRiesgo.moderado.tasaAnual,
           ahorroMensualNormal: 100000,
         );
+
+    final topeMensual = parametros != null ? parametros.limiteApvPesos / 12 : 0.0;
+    final recomendado = topeMensual > 0
+        ? (input.sueldoBrutoMensual * 0.10).clamp(0.0, topeMensual)
+        : input.sueldoBrutoMensual * 0.10;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
@@ -44,13 +52,18 @@ class InputScreen extends ConsumerWidget {
           iconGradient: const [kAccent, Color(0xFF00B880)],
           title: 'Sueldo bruto mensual',
           valueText: '\$${_nf.format(input.sueldoBrutoMensual.round())}',
-          child: _GradientSlider(
-            value: input.sueldoBrutoMensual,
-            min: 500000,
-            max: 15000000,
-            divisions: 29,
-            activeColor: kAccent,
-            onChanged: (v) => ref.read(simulationProvider.notifier).setSueldo(v),
+          child: Semantics(
+            label: 'Sueldo bruto mensual',
+            value: '\$${_nf.format(input.sueldoBrutoMensual.round())}',
+            slider: true,
+            child: _GradientSlider(
+              value: input.sueldoBrutoMensual,
+              min: 500000,
+              max: 15000000,
+              divisions: 29,
+              activeColor: kAccent,
+              onChanged: (v) => ref.read(simulationProvider.notifier).setSueldo(v),
+            ),
           ),
         ),
         const SizedBox(height: 12),
@@ -97,6 +110,14 @@ class InputScreen extends ConsumerWidget {
         ),
         const SizedBox(height: 12),
 
+        // Sugerencia de aporte (tope 600 UF)
+        if (parametros != null)
+          _TopeAportCard(
+            topeAnual: parametros.limiteApvPesos,
+            recomendadoMensual: recomendado,
+            actualMensual: input.ahorroMensualApv,
+          ),
+        if (parametros != null) const SizedBox(height: 8),
         // APV mensual
         _GlassInputCard(
           index: 3,
@@ -104,14 +125,48 @@ class InputScreen extends ConsumerWidget {
           iconGradient: const [Color(0xFF6C63FF), Color(0xFF9B59FF)],
           title: 'Ahorro mensual APV',
           valueText: '\$${_nf.format(input.ahorroMensualApv.round())}',
-          child: _GradientSlider(
-            value: input.ahorroMensualApv,
-            min: 0,
-            max: 1500000,
-            divisions: 30,
-            activeColor: kAccent2,
-            onChanged: (v) => ref.read(simulationProvider.notifier).setAhorroApv(v),
+            child: Semantics(
+              label: 'Ahorro mensual APV',
+              value: '\$${_nf.format(input.ahorroMensualApv.round())}',
+              slider: true,
+              child: _GradientSlider(
+                value: input.ahorroMensualApv,
+                min: 0,
+                max: (parametros?.limiteApvPesos ?? 25000000) / 12,
+                divisions: 30,
+                activeColor: kAccent2,
+                onChanged: (v) => ref.read(simulationProvider.notifier).setAhorroApv(v),
+              ),
+            ),
+        ),
+        const SizedBox(height: 8),
+        Semantics(
+          button: true,
+          label: 'Comparar escenarios: qué pasa si aporto más',
+          child: OutlinedButton.icon(
+            onPressed: () => CompararBottomSheet.show(context, ref, input),
+            icon: const Icon(Icons.compare_arrows_rounded, size: 18),
+            label: const Text('¿Qué pasa si aporto más?'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: kAccent2,
+              side: BorderSide(color: kAccent2.withValues(alpha: 0.5)),
+            ),
           ),
+        ),
+        const SizedBox(height: 12),
+
+        // Régimen tributario (A, B o Automático)
+        _RegimenSelectorCard(
+          selected: input.regimenElegido,
+          onSelected: (r) => ref.read(simulationProvider.notifier).setRegimenElegido(r),
+        ),
+        const SizedBox(height: 12),
+
+        // Tipo de fondo AFP (A–E)
+        _FondoSelectorCard(
+          fondos: parametros?.fondos ?? [],
+          selectedId: input.tipoFondo,
+          onSelected: (id) => ref.read(simulationProvider.notifier).setTipoFondo(id),
         ),
         const SizedBox(height: 12),
 
@@ -144,6 +199,211 @@ class InputScreen extends ConsumerWidget {
         if (state?.loading == true) const _PulseLoadingBar(),
         if (state?.error != null) _ErrorChip(message: state!.error.toString()),
       ],
+    );
+  }
+}
+
+// ── Tope y sugerencia de aporte ─────────────────────────────────────
+
+class _TopeAportCard extends StatelessWidget {
+  const _TopeAportCard({
+    required this.topeAnual,
+    required this.recomendadoMensual,
+    required this.actualMensual,
+  });
+  final double topeAnual;
+  final double recomendadoMensual;
+  final double actualMensual;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: kAccent2.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: kAccent2.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Puedes aportar hasta \$${_nf.format(topeAnual.round())}/año en APV (600 UF)',
+            style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: kTextPrimary),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Sugerencia: \$${_nf.format(recomendadoMensual.round())}/mes (≈10% sueldo)',
+            style: GoogleFonts.inter(fontSize: 11, color: kTextMuted),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Selector Régimen A / B / Automático ─────────────────────────────
+
+class _RegimenSelectorCard extends StatelessWidget {
+  const _RegimenSelectorCard({required this.selected, required this.onSelected});
+  final RegimenElegido selected;
+  final ValueChanged<RegimenElegido> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: kBgCard,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: kBorderGlass),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: kAccent.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.balance_rounded, size: 18, color: kAccent),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Régimen tributario',
+                style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: kTextSecondary),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: RegimenElegido.values.map((r) {
+              final isSelected = selected == r;
+              return Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(right: r != RegimenElegido.values.last ? 8 : 0),
+                  child: Material(
+                    color: isSelected ? kAccent.withValues(alpha: 0.15) : kBgCardLight,
+                    borderRadius: BorderRadius.circular(12),
+                    child: InkWell(
+                      onTap: () => onSelected(r),
+                      borderRadius: BorderRadius.circular(12),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        child: Center(
+                          child: Text(
+                            r == RegimenElegido.auto ? 'Auto' : r == RegimenElegido.a ? 'A' : 'B',
+                            style: GoogleFonts.spaceGrotesk(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: isSelected ? kAccent : kTextMuted,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            selected.label,
+            style: GoogleFonts.inter(fontSize: 11, color: kTextMuted),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Selector tipo de fondo (A–E) ─────────────────────────────────────
+
+class _FondoSelectorCard extends StatelessWidget {
+  const _FondoSelectorCard({required this.fondos, required this.selectedId, required this.onSelected});
+  final List<FondoInfo> fondos;
+  final String? selectedId;
+  final ValueChanged<String?> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    if (fondos.isEmpty) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: kBgCard,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: kBorderGlass),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: kChartEtf.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.pie_chart_rounded, size: 18, color: kChartEtf),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Tipo de fondo AFP',
+                style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: kTextSecondary),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: fondos.map((f) {
+                final isSelected = selectedId == f.id;
+                return Padding(
+                  padding: EdgeInsets.only(right: f.id != fondos.last.id ? 8 : 0),
+                  child: Tooltip(
+                    message: '${f.nombre}: ${f.descripcion} (${(f.tasaAnual * 100).round()}% retorno ref.)',
+                    child: Material(
+                      color: isSelected ? kChartEtf.withValues(alpha: 0.2) : kBgCardLight,
+                      borderRadius: BorderRadius.circular(12),
+                      child: InkWell(
+                        onTap: () => onSelected(isSelected ? null : f.id),
+                        borderRadius: BorderRadius.circular(12),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'Fondo ${f.id}',
+                                style: GoogleFonts.spaceGrotesk(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: isSelected ? kChartEtf : kTextMuted,
+                                ),
+                              ),
+                              Text(
+                                '${(f.tasaAnual * 100).round()}%',
+                                style: GoogleFonts.inter(fontSize: 11, color: kTextMuted),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

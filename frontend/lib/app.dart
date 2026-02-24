@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import 'screens/home_shell.dart';
+import 'screens/root_screen.dart';
 
 // ── Paleta Dark Premium ──────────────────────────────────────────────
 const kBgDeep = Color(0xFF0A0E1A);
@@ -127,7 +127,7 @@ class ApvApp extends StatelessWidget {
           linearTrackColor: kBgCardLight,
         ),
       ),
-      home: const HomeShell(),
+      home: const RootScreen(),
     );
   }
 }

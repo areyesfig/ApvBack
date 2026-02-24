@@ -15,7 +15,13 @@ flutter pub get
 flutter run
 ```
 
-En dispositivo físico, cambia la URL del API en `lib/core/api_client.dart` por la IP de tu máquina (ej. `http://192.168.1.x:8000/api/v1`).
+En dispositivo físico o producción, define la URL del API:
+
+- **Desarrollo (mismo equipo):** por defecto usa `http://127.0.0.1:8000/api/v1`.
+- **Dispositivo en red local:**  
+  `flutter run --dart-define=API_BASE=http://192.168.1.x:8000/api/v1`
+- **Producción (HTTPS):**  
+  `flutter build apk --dart-define=API_BASE=https://api.tudominio.com/api/v1`
 
 ## Estructura
 

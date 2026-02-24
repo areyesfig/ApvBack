@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/api_client.dart';
+import '../core/history_storage.dart';
 import '../core/models.dart';
 
 /// Debounce en ms antes de llamar al backend.
@@ -15,24 +17,28 @@ class SimulationState {
     this.result,
     this.loading = false,
     this.error,
+    this.isFromOfflineCache = false,
   });
 
   final UserInput input;
   final SimulacionAPVResponse? result;
   final bool loading;
   final String? error;
+  final bool isFromOfflineCache;
 
   SimulationState copyWith({
     UserInput? input,
     SimulacionAPVResponse? result,
     bool? loading,
     String? error,
+    bool? isFromOfflineCache,
   }) {
     return SimulationState(
       input: input ?? this.input,
       result: result ?? this.result,
       loading: loading ?? this.loading,
       error: error,
+      isFromOfflineCache: isFromOfflineCache ?? this.isFromOfflineCache,
     );
   }
 }
@@ -58,6 +64,8 @@ class SimulationNotifier extends AsyncNotifier<SimulationState> {
         ahorroMensualApv: 150000,
         perfilRiesgo: PerfilRiesgo.moderado.tasaAnual,
         ahorroMensualNormal: 100000,
+        regimenElegido: RegimenElegido.auto,
+        tipoFondo: 'C',
       );
 
   /// Actualiza solo los inputs (sin llamar API todavía).
@@ -82,6 +90,8 @@ class SimulationNotifier extends AsyncNotifier<SimulationState> {
         ahorroMensualApv: i.ahorroMensualApv,
         perfilRiesgo: i.perfilRiesgo,
         ahorroMensualNormal: i.ahorroMensualNormal,
+        regimenElegido: i.regimenElegido,
+        tipoFondo: i.tipoFondo,
       ));
   void setEdadActual(int v) => _update((i) => UserInput(
         sueldoBrutoMensual: i.sueldoBrutoMensual,
@@ -90,6 +100,8 @@ class SimulationNotifier extends AsyncNotifier<SimulationState> {
         ahorroMensualApv: i.ahorroMensualApv,
         perfilRiesgo: i.perfilRiesgo,
         ahorroMensualNormal: i.ahorroMensualNormal,
+        regimenElegido: i.regimenElegido,
+        tipoFondo: i.tipoFondo,
       ));
   void setEdadJubilacion(int v) => _update((i) => UserInput(
         sueldoBrutoMensual: i.sueldoBrutoMensual,
@@ -98,6 +110,8 @@ class SimulationNotifier extends AsyncNotifier<SimulationState> {
         ahorroMensualApv: i.ahorroMensualApv,
         perfilRiesgo: i.perfilRiesgo,
         ahorroMensualNormal: i.ahorroMensualNormal,
+        regimenElegido: i.regimenElegido,
+        tipoFondo: i.tipoFondo,
       ));
   void setAhorroApv(double v) => _update((i) => UserInput(
         sueldoBrutoMensual: i.sueldoBrutoMensual,
@@ -106,6 +120,8 @@ class SimulationNotifier extends AsyncNotifier<SimulationState> {
         ahorroMensualApv: v,
         perfilRiesgo: i.perfilRiesgo,
         ahorroMensualNormal: i.ahorroMensualNormal,
+        regimenElegido: i.regimenElegido,
+        tipoFondo: i.tipoFondo,
       ));
   void setAhorroNormal(double v) => _update((i) => UserInput(
         sueldoBrutoMensual: i.sueldoBrutoMensual,
@@ -114,6 +130,8 @@ class SimulationNotifier extends AsyncNotifier<SimulationState> {
         ahorroMensualApv: i.ahorroMensualApv,
         perfilRiesgo: i.perfilRiesgo,
         ahorroMensualNormal: v,
+        regimenElegido: i.regimenElegido,
+        tipoFondo: i.tipoFondo,
       ));
   void setPerfilRiesgo(double tasaAnual) => _update((i) => UserInput(
         sueldoBrutoMensual: i.sueldoBrutoMensual,
@@ -122,6 +140,28 @@ class SimulationNotifier extends AsyncNotifier<SimulationState> {
         ahorroMensualApv: i.ahorroMensualApv,
         perfilRiesgo: tasaAnual,
         ahorroMensualNormal: i.ahorroMensualNormal,
+        regimenElegido: i.regimenElegido,
+        tipoFondo: i.tipoFondo,
+      ));
+  void setRegimenElegido(RegimenElegido v) => _update((i) => UserInput(
+        sueldoBrutoMensual: i.sueldoBrutoMensual,
+        edadActual: i.edadActual,
+        edadJubilacion: i.edadJubilacion,
+        ahorroMensualApv: i.ahorroMensualApv,
+        perfilRiesgo: i.perfilRiesgo,
+        ahorroMensualNormal: i.ahorroMensualNormal,
+        regimenElegido: v,
+        tipoFondo: i.tipoFondo,
+      ));
+  void setTipoFondo(String? v) => _update((i) => UserInput(
+        sueldoBrutoMensual: i.sueldoBrutoMensual,
+        edadActual: i.edadActual,
+        edadJubilacion: i.edadJubilacion,
+        ahorroMensualApv: i.ahorroMensualApv,
+        perfilRiesgo: i.perfilRiesgo,
+        ahorroMensualNormal: i.ahorroMensualNormal,
+        regimenElegido: i.regimenElegido,
+        tipoFondo: v,
       ));
 
   void _update(UserInput Function(UserInput) fn) {
@@ -135,18 +175,29 @@ class SimulationNotifier extends AsyncNotifier<SimulationState> {
       result: state.value?.result,
       loading: true,
       error: null,
+      isFromOfflineCache: false,
     ));
     try {
       final client = ref.read(apiClientProvider);
       final data = await client.simulateApv(input.toJson());
+      await setOfflineCacheSimulation(jsonEncode(data));
       final result = SimulacionAPVResponse.fromJson(data);
-      state = AsyncData(SimulationState(input: input, result: result, loading: false, error: null));
-    } catch (e, st) {
+      state = AsyncData(SimulationState(input: input, result: result, loading: false, error: null, isFromOfflineCache: false));
+    } catch (e) {
+      final cached = await getOfflineCacheSimulation();
+      if (cached != null) {
+        try {
+          final result = SimulacionAPVResponse.fromJson(jsonDecode(cached) as Map<String, dynamic>);
+          state = AsyncData(SimulationState(input: input, result: result, loading: false, error: null, isFromOfflineCache: true));
+          return;
+        } catch (_) {}
+      }
       state = AsyncData(SimulationState(
         input: input,
         result: state.value?.result,
         loading: false,
         error: e.toString(),
+        isFromOfflineCache: false,
       ));
     }
   }
@@ -155,6 +206,13 @@ class SimulationNotifier extends AsyncNotifier<SimulationState> {
   Future<void> refresh() async {
     _debounceTimer?.cancel();
     final input = state.value?.input ?? _defaultInput();
+    await _fetch(input);
+  }
+
+  /// Carga un input (ej. desde historial) y dispara fetch.
+  Future<void> loadInput(UserInput input) async {
+    _debounceTimer?.cancel();
+    state = AsyncData(SimulationState(input: input, result: state.value?.result, loading: true, error: null));
     await _fetch(input);
   }
 }

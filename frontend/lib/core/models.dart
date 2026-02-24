@@ -1,3 +1,20 @@
+/// Régimen tributario elegido: auto (mejor), A o B.
+enum RegimenElegido {
+  auto('Automático (mejor para ti)', 'auto'),
+  a('Régimen A', 'A'),
+  b('Régimen B', 'B');
+
+  const RegimenElegido(this.label, this.value);
+  final String label;
+  final String value;
+
+  static RegimenElegido fromValue(String? v) {
+    if (v == 'A') return RegimenElegido.a;
+    if (v == 'B') return RegimenElegido.b;
+    return RegimenElegido.auto;
+  }
+}
+
 /// Entrada del usuario para la simulación (alineado con backend UserInput).
 class UserInput {
   UserInput({
@@ -7,6 +24,8 @@ class UserInput {
     this.ahorroMensualApv = 0,
     this.perfilRiesgo = 0.05,
     this.ahorroMensualNormal = 0,
+    this.regimenElegido = RegimenElegido.auto,
+    this.tipoFondo,
   });
 
   final double sueldoBrutoMensual;
@@ -15,6 +34,8 @@ class UserInput {
   final double ahorroMensualApv;
   final double perfilRiesgo;
   final double ahorroMensualNormal;
+  final RegimenElegido regimenElegido;
+  final String? tipoFondo; // A, B, C, D, E
 
   Map<String, dynamic> toJson() => {
         'sueldo_bruto_mensual': sueldoBrutoMensual,
@@ -23,7 +44,74 @@ class UserInput {
         'ahorro_mensual_apv': ahorroMensualApv,
         'perfil_riesgo': perfilRiesgo,
         'ahorro_mensual_normal': ahorroMensualNormal,
+        'regimen_elegido': regimenElegido.value,
+        if (tipoFondo != null) 'tipo_fondo': tipoFondo,
       };
+
+  factory UserInput.fromJson(Map<String, dynamic> j) {
+    return UserInput(
+      sueldoBrutoMensual: (j['sueldo_bruto_mensual'] as num).toDouble(),
+      edadActual: (j['edad_actual'] as num).toInt(),
+      edadJubilacion: (j['edad_jubilacion'] as num?)?.toInt() ?? 65,
+      ahorroMensualApv: (j['ahorro_mensual_apv'] as num?)?.toDouble() ?? 0,
+      perfilRiesgo: (j['perfil_riesgo'] as num?)?.toDouble() ?? 0.05,
+      ahorroMensualNormal: (j['ahorro_mensual_normal'] as num?)?.toDouble() ?? 0,
+      regimenElegido: RegimenElegido.fromValue(j['regimen_elegido'] as String?),
+      tipoFondo: j['tipo_fondo'] as String?,
+    );
+  }
+}
+
+/// Info de un tipo de fondo AFP (A–E).
+class FondoInfo {
+  FondoInfo({
+    required this.id,
+    required this.nombre,
+    required this.descripcion,
+    required this.tasaAnual,
+  });
+  final String id;
+  final String nombre;
+  final String descripcion;
+  final double tasaAnual;
+
+  static FondoInfo fromJson(Map<String, dynamic> j) {
+    return FondoInfo(
+      id: j['id'] as String,
+      nombre: j['nombre'] as String,
+      descripcion: j['descripcion'] as String,
+      tasaAnual: (j['tasa_anual'] as num).toDouble(),
+    );
+  }
+}
+
+/// Parámetros del API (UF, UTM, tope APV, fecha actualización indicadores, fondos).
+class ParametrosModel {
+  ParametrosModel({
+    required this.uf,
+    required this.utm,
+    required this.limiteApvPesos,
+    this.indicadoresActualizadoEn,
+    this.fondos = const [],
+  });
+  final double uf;
+  final double utm;
+  final double limiteApvPesos;
+  final String? indicadoresActualizadoEn;
+  final List<FondoInfo> fondos;
+
+  static ParametrosModel fromJson(Map<String, dynamic> j) {
+    final list = j['fondos'] as List<dynamic>?;
+    return ParametrosModel(
+      uf: (j['uf'] as num).toDouble(),
+      utm: (j['utm'] as num).toDouble(),
+      limiteApvPesos: (j['limite_apv_pesos'] as num).toDouble(),
+      indicadoresActualizadoEn: j['indicadores_actualizado_en'] as String?,
+      fondos: list != null
+          ? list.map((e) => FondoInfo.fromJson(e as Map<String, dynamic>)).toList()
+          : [],
+    );
+  }
 }
 
 /// Un año de la proyección (para gráficos).
@@ -67,6 +155,8 @@ class TotalesSimulacion {
     required this.mix,
     required this.mejorRegimen,
     this.ahorroTradicional,
+    this.regimenElegido = 'auto',
+    this.beneficioRegimenElegido,
   });
 
   factory TotalesSimulacion.fromJson(Map<String, dynamic> j) {
@@ -78,6 +168,8 @@ class TotalesSimulacion {
       ahorroTradicional: j['ahorro_tradicional'] != null
           ? ProyeccionJubilacionResult.fromJson(j['ahorro_tradicional'] as Map<String, dynamic>)
           : null,
+      regimenElegido: j['regimen_elegido'] as String? ?? 'auto',
+      beneficioRegimenElegido: (j['beneficio_regimen_elegido'] as num?)?.toDouble(),
     );
   }
 
@@ -86,6 +178,8 @@ class TotalesSimulacion {
   final MixResult mix;
   final String mejorRegimen;
   final ProyeccionJubilacionResult? ahorroTradicional;
+  final String regimenElegido;
+  final double? beneficioRegimenElegido;
 }
 
 class RegimenAResult {
