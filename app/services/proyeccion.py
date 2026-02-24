@@ -93,6 +93,54 @@ def proyectar_jubilacion(
     }
 
 
+def proyectar_jubilacion_anual(
+    ahorro_mensual_apv: float,
+    ahorro_mensual_normal: float,
+    edad_actual: int,
+    edad_jubilacion: int,
+    tasa_anual: float,
+) -> list[dict]:
+    """Genera proyección año a año para graficar: capital APV y capital ahorro tradicional.
+
+    Returns:
+        Lista de dicts por año: anio, edad, capital_apv, capital_ahorro_tradicional,
+        aporte_acumulado_apv, aporte_acumulado_normal.
+    """
+    tasa_mensual = (1 + tasa_anual) ** (1 / 12) - 1
+    anos = edad_jubilacion - edad_actual
+    if anos <= 0:
+        return []
+
+    registros = []
+    for anio_num in range(1, anos + 1):
+        meses = anio_num * 12
+        edad = edad_actual + anio_num
+
+        capital_apv = 0.0
+        if ahorro_mensual_apv > 0:
+            capital_apv = float(-npf.fv(tasa_mensual, meses, ahorro_mensual_apv, 0))
+
+        capital_normal_bruto = 0.0
+        if ahorro_mensual_normal > 0:
+            capital_normal_bruto = float(-npf.fv(tasa_mensual, meses, ahorro_mensual_normal, 0))
+
+        aporte_acum_apv = ahorro_mensual_apv * meses
+        aporte_acum_normal = ahorro_mensual_normal * meses
+        renta_normal = capital_normal_bruto - aporte_acum_normal
+        impuesto_normal = renta_normal * TASA_IMPUESTO_LIR107 if ahorro_mensual_normal > 0 else 0.0
+        capital_tradicional = capital_normal_bruto - impuesto_normal
+
+        registros.append({
+            "anio_proyeccion": anio_num,
+            "edad": edad,
+            "capital_apv": round(capital_apv),
+            "capital_ahorro_tradicional": round(capital_tradicional),
+            "aporte_acumulado_apv": round(aporte_acum_apv),
+            "aporte_acumulado_normal": round(aporte_acum_normal),
+        })
+    return registros
+
+
 def comparar_apv_vs_normal(
     ahorro_mensual_apv: float,
     ahorro_mensual_normal: float,

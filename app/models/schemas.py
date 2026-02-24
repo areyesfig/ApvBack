@@ -124,3 +124,27 @@ class SimulacionCompleta(BaseModel):
     proyeccion_apv: ProyeccionJubilacion | None = None
     proyeccion_normal: ProyeccionJubilacion | None = None
     ventaja_apv_proyeccion: float | None = None
+
+
+# --- Fase 2: Simulación APV con proyección año a año ---
+
+class ProyeccionAnualItem(BaseModel):
+    anio_proyeccion: int
+    edad: int
+    capital_apv: float
+    capital_ahorro_tradicional: float
+    aporte_acumulado_apv: float
+    aporte_acumulado_normal: float
+
+
+class TotalesSimulacionAPV(BaseModel):
+    regimen_a: ResultadoRegimenA
+    regimen_b: ResultadoRegimenB
+    mix: ResultadoMix
+    mejor_regimen: str
+    ahorro_tradicional: ProyeccionJubilacion | None = None
+
+
+class SimulacionAPVResponse(BaseModel):
+    proyeccion_anual: list[ProyeccionAnualItem]
+    totales: TotalesSimulacionAPV

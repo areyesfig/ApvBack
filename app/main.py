@@ -1,16 +1,33 @@
 """FastAPI app - Motor de Reglas Fiscales APV Chile."""
 
+import logging
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import router
+from app.services.indicadores import refresh_indicadores
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Carga inicial de UF/UTM/UTA desde mindicador.cl (caché en memoria)."""
+    try:
+        refresh_indicadores()
+    except Exception as e:
+        logger.warning("Indicadores no actualizados al inicio (se usarán valores por defecto): %s", e)
+    yield
+
 
 app = FastAPI(
     title="Motor de Reglas Fiscales APV Chile",
     description="Calcula ahorro tributario APV Régimen B según normativa SII Chile",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 cors_origins = os.environ.get("CORS_ORIGINS", "*")

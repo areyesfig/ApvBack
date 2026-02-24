@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "skills": {
+    "flutter-adaptive-ui": {
+      "source": "madteacher/mad-agents-skills",
+      "sourceType": "github",
+      "computedHash": "8ec5202f5cfed750cc71569edf901994f3dd6985216ab5e10a4444a5407d6e90"
+    },
+    "python-performance-optimization": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "computedHash": "a25abb5b2d224eee9d572b09fa13937a45831c5de1560c41c3f739e6630b7380"
+    }
+  }
+}

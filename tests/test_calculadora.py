@@ -301,3 +301,32 @@ class TestAPI:
         assert data["proyeccion_apv"] is not None
         assert data["proyeccion_normal"] is None
         assert data["ventaja_apv_proyeccion"] is None
+
+    def test_simulate_apv_endpoint(self):
+        """POST /api/v1/simulate/apv devuelve proyección año a año y totales."""
+        response = client.post("/api/v1/simulate/apv", json={
+            "sueldo_bruto_mensual": 3_000_000,
+            "edad_actual": 30,
+            "edad_jubilacion": 65,
+            "ahorro_mensual_apv": 200_000,
+            "perfil_riesgo": 0.05,
+            "ahorro_mensual_normal": 200_000,
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert "proyeccion_anual" in data
+        assert "totales" in data
+        totales = data["totales"]
+        assert "regimen_a" in totales
+        assert "regimen_b" in totales
+        assert "mix" in totales
+        assert "mejor_regimen" in totales
+        assert "ahorro_tradicional" in totales
+        assert totales["ahorro_tradicional"] is not None
+        anos = 65 - 30
+        assert len(data["proyeccion_anual"]) == anos
+        primer_anio = data["proyeccion_anual"][0]
+        assert primer_anio["anio_proyeccion"] == 1
+        assert primer_anio["edad"] == 31
+        assert "capital_apv" in primer_anio
+        assert "capital_ahorro_tradicional" in primer_anio

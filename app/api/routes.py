@@ -10,13 +10,21 @@ from app.models.schemas import (
     ParametrosResponse,
     UserInput,
     SimulacionCompleta,
+    SimulacionAPVResponse,
 )
 from app.services.calculadora_apv import calcular_ahorro_regimen_b, simular_regimenes
-from app.services.proyeccion import proyectar, proyectar_jubilacion, comparar_apv_vs_normal
+from app.services.proyeccion import (
+    proyectar,
+    proyectar_jubilacion,
+    comparar_apv_vs_normal,
+    proyectar_jubilacion_anual,
+)
 from app.services.tabla_igc import obtener_tramos
+from app.services.indicadores import get_indicadores
 from app.config import (
-    ANO_TRIBUTARIO, UTA, UF, UTM,
-    LIMITE_APV_UF, LIMITE_APV_PESOS, TASA_COTIZACIONES,
+    ANO_TRIBUTARIO,
+    LIMITE_APV_UF,
+    TASA_COTIZACIONES,
 )
 
 router = APIRouter(prefix="/api/v1")
@@ -43,13 +51,15 @@ def proyeccion(req: ProyeccionRequest):
 
 @router.get("/parametros", response_model=ParametrosResponse)
 def parametros():
+    ind = get_indicadores()
+    limite_apv_pesos = LIMITE_APV_UF * ind["uf"]
     return {
         "ano_tributario": ANO_TRIBUTARIO,
-        "uta": UTA,
-        "uf": UF,
-        "utm": UTM,
+        "uta": ind["uta"],
+        "uf": ind["uf"],
+        "utm": ind["utm"],
         "limite_apv_uf": LIMITE_APV_UF,
-        "limite_apv_pesos": LIMITE_APV_PESOS,
+        "limite_apv_pesos": limite_apv_pesos,
         "tasa_cotizaciones": TASA_COTIZACIONES,
         "tramos_igc": obtener_tramos(),
     }
@@ -93,4 +103,42 @@ def simular(req: UserInput):
         "proyeccion_apv": proyeccion_apv,
         "proyeccion_normal": proyeccion_normal,
         "ventaja_apv_proyeccion": ventaja,
+    }
+
+
+@router.post("/simulate/apv", response_model=SimulacionAPVResponse)
+def simulate_apv(req: UserInput):
+    """Simulación APV con proyección año a año para graficar y totales (Régimen A, B, Mix, Ahorro Tradicional)."""
+    resultado = simular_regimenes(
+        sueldo_bruto_mensual=req.sueldo_bruto_mensual,
+        ahorro_apv_mensual=req.ahorro_mensual_apv,
+    )
+
+    proyeccion_anual = proyectar_jubilacion_anual(
+        ahorro_mensual_apv=req.ahorro_mensual_apv,
+        ahorro_mensual_normal=req.ahorro_mensual_normal,
+        edad_actual=req.edad_actual,
+        edad_jubilacion=req.edad_jubilacion,
+        tasa_anual=req.perfil_riesgo,
+    )
+
+    ahorro_tradicional = None
+    if req.ahorro_mensual_normal > 0:
+        ahorro_tradicional = proyectar_jubilacion(
+            ahorro_mensual=req.ahorro_mensual_normal,
+            edad_actual=req.edad_actual,
+            edad_jubilacion=req.edad_jubilacion,
+            tasa_anual=req.perfil_riesgo,
+            es_apv=False,
+        )
+
+    return {
+        "proyeccion_anual": proyeccion_anual,
+        "totales": {
+            "regimen_a": resultado["regimen_a"],
+            "regimen_b": resultado["regimen_b"],
+            "mix": resultado["mix"],
+            "mejor_regimen": resultado["mejor_regimen"],
+            "ahorro_tradicional": ahorro_tradicional,
+        },
     }
